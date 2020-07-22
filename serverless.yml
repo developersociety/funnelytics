@@ -1,0 +1,73 @@
+service: funnelytics
+
+provider:
+  name: aws
+  runtime: python3.6
+  stage: ${opt:stage, 'production'}
+  region: ${opt:region, 'eu-west-2'}
+  versionFunctions: false
+  environment:
+    HITS_TABLE: ${self:provider.stage}-hits_table
+    STAGE: ${self:provider.stage}
+    REGION: ${self:provider.region}
+    HITS_BUCKET: funnelytics-${self:provider.stage}-hits-bucket
+
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - dynamodb:Query
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:Query
+        - dynamodb:DescribeTable
+        - s3:PutObject
+      Resource:
+        - arn:aws:dynamodb:*:*:table/${self:provider.environment.HITS_TABLE}
+        - arn:aws:s3:::${self:provider.environment.HITS_BUCKET}/*
+
+functions:
+  hits_handler:
+    name: ${self:provider.stage}-funnelytics-hits_handler
+    handler: handler/hitsHandler.hits_handler
+    timeout: 10
+    events:
+      - http:
+          path: /hit
+          method: post
+          cors: true
+
+
+resources:
+  Resources:
+    HitsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      Properties:
+        TableName: ${self:provider.environment.HITS_TABLE}
+        AttributeDefinitions:
+          - AttributeName: sid
+            AttributeType: S
+          - AttributeName: event_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: sid
+            KeyType: HASH
+          - AttributeName: event_id
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+    dockerSsh: true
+    slim: true
+    noDeploy:
+      - pytest
+      - moto
+    fileName: requirements-prod.txt
